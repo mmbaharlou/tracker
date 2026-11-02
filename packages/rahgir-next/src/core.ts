@@ -29,6 +29,8 @@ export interface RahgirConfig {
 
 export type Props = Record<string, unknown>;
 
+interface RemoteConfig { enabled?: boolean; sampleRate?: number; autocapture?: boolean | null }
+
 interface WireEvent {
   id: string;
   type: string;
@@ -46,7 +48,7 @@ interface WireEvent {
   props?: Props;
 }
 
-const STORAGE = { anon: "rahgir_anon", user: "rahgir_user", session: "rahgir_session" };
+const STORAGE = { anon: "rahgir_anon", user: "rahgir_user", session: "rahgir_session", config: "rahgir_config" };
 const DEFAULT_SENSITIVE = ["password", "passwd", "pwd", "pass", "secret", "token", "authorization", "otp",
   "cvv", "cvv2", "card", "cardnumber", "pan", "nationalcode", "codemelli", "iban", "sheba", "pin"];
 const IGNORE_ATTR = "data-rahgir-ignore";
@@ -79,6 +81,9 @@ export class RahgirTracker {
   private userId: string | undefined;
   private session = { id: "", last: 0 };
   private disabled = false;
+  private autocaptureOff = false;
+  /** Hold the first send until central settings are known (max 3 s), so a switched-off project sends nothing. */
+  private remoteReady = false;
   private currentPage: { path: string; start: number; maxScroll: number } | null = null;
   private teardown: Array<() => void> = [];
 
@@ -118,6 +123,8 @@ export class RahgirTracker {
       if (this.cfg.autocapture) this.watchDom();
       this.patchNetwork();
       this.watchScroll();
+      this.applyRemote(this.cachedRemote());
+      this.loadRemote();
     } catch (e) {
       this.log("start failed", e);
     }
@@ -220,6 +227,7 @@ export class RahgirTracker {
 
   flush(unloading = false) {
     if (!this.queue.length || this.disabled) return;
+    if (!this.remoteReady && !unloading) return;
     const events = this.queue.splice(0, 200);
     const body = JSON.stringify({ events, source: "web", sdk: "rahgir-next/1.0" });
     const url = `${this.cfg.collectorUrl}/v1/batch?k=${encodeURIComponent(this.cfg.projectKey)}`;
@@ -231,6 +239,47 @@ export class RahgirTracker {
         headers: { "Content-Type": "text/plain" } }).catch(() => { /* dropped */ });
     } catch { /* never throw */ }
     if (this.queue.length) idle(() => this.flush(unloading));
+  }
+
+  // --- central settings (set in the Rahgir dashboard, applied to every install) ---
+
+  private cachedRemote(): RemoteConfig | null {
+    try {
+      const raw = store("local")?.getItem(STORAGE.config);
+      const c = raw ? JSON.parse(raw) : null;
+      return c && Date.now() - c.at < 24 * 3600000 ? c.cfg : null;
+    } catch { return null; }
+  }
+
+  private loadRemote() {
+    const ready = () => { this.remoteReady = true; };
+    if (this.cachedRemote()) ready();
+    setTimeout(ready, 3000);
+    const url = `${this.cfg.collectorUrl}/v1/config?k=${encodeURIComponent(this.cfg.projectKey)}`;
+    origFetch?.call(window, url, { credentials: "omit", mode: "cors" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg: RemoteConfig | null) => {
+        if (!cfg) return;
+        store("local")?.setItem(STORAGE.config, JSON.stringify({ at: Date.now(), cfg }));
+        this.applyRemote(cfg);
+      })
+      .catch(() => { /* keep local settings */ })
+      .finally(ready);
+  }
+
+  private applyRemote(cfg: RemoteConfig | null) {
+    if (!cfg) return;
+    this.autocaptureOff = cfg.autocapture === false;
+    // Sampling is decided once per visitor so a visitor is either fully tracked or not at all.
+    const bucket = parseInt(this.anonId.replace(/-/g, "").slice(0, 8), 16) / 0xffffffff;
+    const off = cfg.enabled === false || (typeof cfg.sampleRate === "number" && !(bucket < cfg.sampleRate));
+    if (off && !this.disabled) {
+      this.disabled = true;
+      this.queue = [];
+      this.log("disabled by central settings");
+    } else if (!off && this.disabled) {
+      this.disabled = false;
+    }
   }
 
   // --- sessions -------------------------------------------------------------
@@ -310,12 +359,14 @@ export class RahgirTracker {
 
   private watchDom() {
     const onClick = (ev: MouseEvent) => {
+      if (this.autocaptureOff) return;
       const el = (ev.target as Element | null)?.closest?.(`a,button,[role=button],input[type=submit],input[type=button],[${NAME_ATTR}]`);
       if (!el || this.ignored(el)) return;
       const info = this.describe(el);
       idle(() => this.push("click", info.name, info.props));
     };
     const onSubmit = (ev: Event) => {
+      if (this.autocaptureOff) return;
       const form = ev.target as HTMLFormElement;
       if (!form || this.ignored(form)) return;
       const name = form.getAttribute(NAME_ATTR) || form.getAttribute("name") || form.id || undefined;
@@ -323,6 +374,7 @@ export class RahgirTracker {
       idle(() => this.push("submit", name, { form: name, action: this.safePath(form.getAttribute("action")), fields }));
     };
     const onChange = (ev: Event) => {
+      if (this.autocaptureOff) return;
       const el = ev.target as HTMLInputElement;
       if (!el || !el.tagName || this.ignored(el)) return;
       // Values are never sent: only which field changed.

@@ -19,11 +19,12 @@ internal sealed class RahgirTracker : IRahgirTracker
     private readonly EventQueue _queue;
     private readonly IHttpContextAccessor _http;
     private readonly RahgirOptions _options;
+    private readonly EffectiveSettings _settings;
     private readonly Masker _masker;
 
-    public RahgirTracker(EventQueue queue, IHttpContextAccessor http, RahgirOptions options, Masker masker)
+    public RahgirTracker(EventQueue queue, IHttpContextAccessor http, RahgirOptions options, EffectiveSettings settings, Masker masker)
     {
-        _queue = queue; _http = http; _options = options; _masker = masker;
+        _queue = queue; _http = http; _options = options; _settings = settings; _masker = masker;
     }
 
     public void Track(string name, object? properties = null, string? userId = null)
@@ -34,7 +35,7 @@ internal sealed class RahgirTracker : IRahgirTracker
 
     private void Enqueue(string type, string? name, object? props, string? userId)
     {
-        if (!_options.Enabled) return;
+        if (!_settings.Enabled) return;
         try
         {
             var e = new TrackEvent { Type = type, Name = name, Properties = _masker.MaskProperties(ToDictionary(props)) };

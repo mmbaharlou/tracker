@@ -94,7 +94,7 @@ public class OrderService(IRahgirTracker tracker)
 ## ۳. اضافه کردن به هر پروژه Next.js
 
 ```bash
-npm i D:/track/Rahgir/artifacts/npm/rahgir-next-1.0.0.tgz
+npm i D:/track/Rahgir/artifacts/npm/rahgir-next-1.1.0.tgz
 ```
 
 ```tsx
@@ -120,6 +120,47 @@ axios.get(url, { headers: rahgir.headers() });       // اگر axios دارید 
 - برای اینکه درخواست‌های API به همان بازدیدکننده وصل شوند، در CORS بک‌اند هدرهای
   `X-Rahgir-Session` و `X-Rahgir-Anon` را مجاز کنید:
   `policy.WithHeaders("Content-Type", "Authorization", "X-Rahgir-Session", "X-Rahgir-Anon")`.
+
+## مدیریت مرکزی (چند پروژه، یک داشبورد)
+
+یک Collector مرکزی (مثلاً `https://rahgir.rhinox.ir`) همه پروژه‌ها را نگه می‌دارد. از منوی **مدیریت** در داشبورد (فقط مدیرها):
+
+- **پروژه جدید:** کلید (مثلاً `verti`)، نام و Origin های مجاز را وارد کنید. `ServerSecret` و `ReadKey` فقط همان لحظه یک بار نمایش داده می‌شوند.
+  کلید سرور رمزنگاری‌شده (ASP.NET Data Protection) و از کلید خواندن فقط هش ذخیره می‌شود.
+- **تنظیمات از راه دور:** روشن/خاموش کردن ثبت، درصد نمونه‌گیری API و بازدیدکننده، ثبت خودکار API و کلیک، ذخیره بدنه درخواست،
+  مسیرهای نادیده یا فقط‌این‌مسیرها. هر نصب (بک‌اند هر دقیقه، مرورگر در هر بار باز شدن سایت) این‌ها را می‌خواند؛ نیازی به انتشار دوباره نیست.
+- **کلید جدید:** اگر کلیدی لو رفت، از همان‌جا کلید جدید بسازید؛ کلید قبلی فوراً از کار می‌افتد.
+- **غیرفعال کردن پروژه:** هیچ داده‌ای از آن پذیرفته نمی‌شود (داده‌های قبلی می‌مانند).
+- **کاربران داشبورد:** ساخت کاربر، تعیین پروژه‌هایی که می‌بیند و نقش مدیر. حذف کاربر دسترسی او را فوراً قطع می‌کند.
+
+پروژه‌ها و کاربرانی که در `appsettings` تعریف شده‌اند هم کار می‌کنند و در این صفحه «از فایل تنظیمات» و فقط‌خواندنی نمایش داده می‌شوند.
+پوشه کلیدهای Data Protection (پیش‌فرض `App_Data/keys`، قابل تغییر با `Rahgir:DataProtectionKeysPath`) را خصوصی نگه دارید و بکاپ بگیرید؛
+روی ویندوز با DPAPI ماشین هم رمز می‌شود.
+
+## نمایش داده‌ها داخل خود پروژه (مثلاً پنل ادمین ورتی)
+
+بک‌اند پروژه (کلید خواندن فقط در سرور می‌ماند و احراز هویت خود پروژه از آن محافظت می‌کند):
+
+```json
+"Rahgir": { "ProjectKey": "verti", "CollectorUrl": "https://rahgir.rhinox.ir", "ServerSecret": "...", "ReadKey": "rk_..." }
+```
+
+```csharp
+app.MapRahgirInsights("/api/admin/rahgir", "AdminOnly");   // اسم Policy احراز هویت خود پروژه؛ اجباری است
+```
+
+فرانت پروژه:
+
+```tsx
+import { RahgirUserActivity, RahgirOverview, RahgirRecentEvents } from "@rahgir/next/insights";
+
+<RahgirOverview baseUrl="/api/admin/rahgir" days={30} />
+<RahgirUserActivity baseUrl="/api/admin/rahgir" userId={user.id}
+                    headers={{ Authorization: `Bearer ${token}` }} />   // اگر API با JWT است
+```
+
+برای UI دلخواه: `useRahgirInsights(source, "users" | "user" | "events" | "overview" | "session", params)`.
+API مستقیم Collector هم در دسترس است: `GET /v1/read/{overview|events|users|user|session}` با هدر `Authorization: Bearer rk_...`.
 
 ## عملکرد
 

@@ -29,10 +29,12 @@ public static class RahgirExtensions
         services.TryAddSingleton(options);
         services.TryAddSingleton(new Masker(options.SensitiveKeys));
         services.TryAddSingleton<EventQueue>();
+        services.TryAddSingleton<EffectiveSettings>();
         services.AddHttpContextAccessor();
         services.TryAddSingleton<IRahgirTracker, RahgirTracker>();
         services.AddHttpClient(BatchSender.HttpClientName, c => c.Timeout = options.HttpTimeout);
         services.AddHostedService<BatchSender>();
+        services.AddHostedService<RemoteSettingsPoller>();
         return services;
     }
 

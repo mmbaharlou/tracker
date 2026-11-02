@@ -5,9 +5,13 @@ import { createRequire } from "node:module";
 const { chromium } = createRequire(import.meta.url)("playwright");
 
 const batches = [], apiHeaders = [];
+let remote = { enabled: true, sampleRate: 1 };
 const collector = http.createServer((req, res) => {
   let body = ""; req.on("data", (c) => (body += c));
-  req.on("end", () => { if (req.url.startsWith("/v1/batch")) batches.push(JSON.parse(body)); res.writeHead(202); res.end(); });
+  req.on("end", () => {
+    if (req.url.startsWith("/v1/config")) { res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }); return res.end(JSON.stringify(remote)); }
+    if (req.url.startsWith("/v1/batch")) batches.push(JSON.parse(body)); res.writeHead(202); res.end();
+  });
 }).listen(5091);
 
 const page = `<!doctype html><html><body>
@@ -40,6 +44,16 @@ await p.evaluate(() => { history.pushState({}, "", "/cart"); });
 await p.evaluate(() => window.rahgir.identify("user-1", { name: "Ali", password: "x" }));
 await p.evaluate(() => window.rahgir.track("AddToCart", { sku: "A1" }));
 await p.waitForTimeout(1200);
+
+// Switched off centrally: a fresh visitor sends nothing.
+remote = { enabled: false, sampleRate: 1 };
+const ctx2 = await browser.newContext();
+const p2 = await ctx2.newPage();
+const before = batches.length;
+await p2.goto("http://127.0.0.1:5090/other");
+await p2.click("#buy");
+await p2.waitForTimeout(1200);
+const offBatches = batches.length - before;
 await browser.close(); collector.close(); site.close();
 
 const events = batches.flatMap((b) => b.events);
@@ -58,4 +72,5 @@ check(ident?.userId === "user-1" && ident.props.password === "***" && ident.prop
 check(events.find((e) => e.type === "custom")?.userId === "user-1", "events after identify carry userId");
 check(new Set(events.map((e) => e.sessionId)).size === 1 && new Set(events.map((e) => e.anonId)).size === 1, "one session and visitor");
 check(apiHeaders[0]?.["x-rahgir-session"] === events[0].sessionId, "same-origin API call carries session header");
+check(offBatches === 0, "central off switch stops a new visitor's events");
 console.log(`\nall good: ${events.length} events in ${batches.length} batches`);

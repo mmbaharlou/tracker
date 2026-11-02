@@ -1,17 +1,17 @@
 "use client";
 
 export class ApiError extends Error {
-  constructor(public status: number) { super(`HTTP ${status}`); }
+  constructor(public status: number, message?: string) { super(message ?? `HTTP ${status}`); }
 }
 
-export async function api<T = any>(path: string, params?: Record<string, string | number | undefined | null>, method: "GET" | "POST" = "GET", body?: unknown): Promise<T> {
+export async function api<T = any>(path: string, params?: Record<string, string | number | undefined | null>, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown): Promise<T> {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params ?? {})) if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
   const url = `/api/dash/${path}${qs.size ? `?${qs}` : ""}`;
   const res = await fetch(url, {
     method,
     credentials: "same-origin",
-    headers: method === "POST" ? { "Content-Type": "application/json", "X-Rahgir-Csrf": "1" } : undefined,
+    headers: method !== "GET" ? { "Content-Type": "application/json", "X-Rahgir-Csrf": "1" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
   });
@@ -19,7 +19,11 @@ export async function api<T = any>(path: string, params?: Record<string, string 
     location.href = "/login/";
     throw new ApiError(401);
   }
-  if (!res.ok) throw new ApiError(res.status);
+  if (!res.ok) {
+    let msg: string | undefined;
+    try { msg = (await res.json())?.error; } catch { /* no body */ }
+    throw new ApiError(res.status, msg ?? (res.status === 403 ? "دسترسی ندارید." : `خطای ${res.status}`));
+  }
   const text = await res.text();
   return (text ? JSON.parse(text) : null) as T;
 }
