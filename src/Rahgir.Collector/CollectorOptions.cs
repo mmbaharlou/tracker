@@ -31,6 +31,12 @@ public sealed class CollectorOptions
     public string[] DashboardAllowedIps { get; set; } = Array.Empty<string>();
 
     public string[] SensitiveKeys { get; set; } = Array.Empty<string>();
+
+    /// <summary>Folder for ASP.NET Data Protection keys (encrypts project secrets in the database). Back it up.</summary>
+    public string? DataProtectionKeysPath { get; set; }
+
+    /// <summary>Requests per minute per read key on /v1/read.</summary>
+    public int ReadRateLimitPerMinute { get; set; } = 600;
 }
 
 public sealed class ProjectOptions
@@ -42,6 +48,10 @@ public sealed class ProjectOptions
     public string ServerSecret { get; set; } = "";
     /// <summary>Browser origins allowed to send events, e.g. "https://shop.ir". Empty = any (not recommended).</summary>
     public string[] AllowedOrigins { get; set; } = Array.Empty<string>();
+    /// <summary>Optional read-only key for the /v1/read API (e.g. to show data inside the project's own admin panel).</summary>
+    public string ReadKey { get; set; } = "";
+    /// <summary>Settings pushed to every install of this project.</summary>
+    public Rahgir.Core.ProjectSettings? Settings { get; set; }
 }
 
 public sealed class DashboardUser
