@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using Microsoft.Extensions.Primitives;
 using Rahgir.Core;
+using Rahgir.Collector.Management;
 
 namespace Rahgir.Collector.Ingestion;
 
@@ -13,18 +14,19 @@ public static class IngestEndpoints
     public static void MapIngest(this WebApplication app)
     {
         // Browser SDK. Body is JSON sent as text/plain (sendBeacon / no-cors fetch), project key in ?k=
-        app.MapMethods("/v1/batch", new[] { "OPTIONS" }, (HttpContext ctx, CollectorOptions o) =>
+        app.MapMethods("/v1/batch", new[] { "OPTIONS" }, (HttpContext ctx, Registry r) =>
         {
-            var project = o.Projects.FirstOrDefault(p => p.Key == ctx.Request.Query["k"].ToString());
+            var project = r.Project(ctx.Request.Query["k"].ToString())?.AsOptions();
             if (project != null) ApplyCors(ctx, project);
             return Results.NoContent();
         }).RequireRateLimiting(WebPolicy);
 
-        app.MapPost("/v1/batch", async (HttpContext ctx, CollectorOptions o, EventValidator validator, IngestQueue queue) =>
+        app.MapPost("/v1/batch", async (HttpContext ctx, CollectorOptions o, Registry r, EventValidator validator, IngestQueue queue) =>
         {
-            var key = ctx.Request.Query["k"].ToString();
-            var project = o.Projects.FirstOrDefault(p => p.Key == key);
-            if (project == null) return Results.StatusCode(403);
+            var info = r.Project(ctx.Request.Query["k"].ToString());
+            if (info == null) return Results.StatusCode(403);
+            if (!info.Settings.Enabled) return Results.Accepted(); // switched off centrally: accept and discard
+            var project = info.AsOptions();
             if (!OriginAllowed(ctx, project)) return Results.StatusCode(403);
             ApplyCors(ctx, project);
 
@@ -39,11 +41,11 @@ public static class IngestEndpoints
         }).RequireRateLimiting(WebPolicy).DisableAntiforgery();
 
         // Backend SDK. gzip body, HMAC-signed.
-        app.MapPost("/v1/server/batch", async (HttpContext ctx, CollectorOptions o, EventValidator validator, IngestQueue queue) =>
+        app.MapPost("/v1/server/batch", async (HttpContext ctx, CollectorOptions o, Registry r, EventValidator validator, IngestQueue queue) =>
         {
-            var key = ctx.Request.Headers[RahgirHeaders.Project].ToString();
-            var project = o.Projects.FirstOrDefault(p => p.Key == key);
-            if (project == null || string.IsNullOrEmpty(project.ServerSecret)) return Results.StatusCode(403);
+            var info = r.Project(ctx.Request.Headers[RahgirHeaders.Project].ToString());
+            if (info == null || string.IsNullOrEmpty(info.ServerSecret)) return Results.StatusCode(403);
+            var project = info.AsOptions();
 
             var raw = await ReadLimitedAsync(ctx.Request.Body, o.MaxServerBodyBytes, ctx.RequestAborted);
             if (raw == null) return Results.StatusCode(413);
@@ -58,6 +60,7 @@ public static class IngestEndpoints
 
             var batch = Parse(json);
             if (batch == null) return Results.BadRequest();
+            if (!info.Settings.Enabled) return Results.Accepted();
             var events = validator.Validate(batch, project.Key, "server", null, null);
             return queue.TryEnqueueAll(events) ? Results.Accepted() : Results.StatusCode(503);
         }).RequireRateLimiting(ServerPolicy).DisableAntiforgery();

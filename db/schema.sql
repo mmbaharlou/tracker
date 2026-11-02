@@ -167,3 +167,43 @@ GRANT EXECUTE ON rahgir.PurgeOldEvents TO rahgir_writer;
 GRANT SELECT ON SCHEMA::rahgir TO rahgir_reader;
 GRANT EXECUTE ON rahgir.ForgetUser TO rahgir_reader;
 GO
+
+/* =====================  Central management (v1.1)  ===================== */
+
+/* Projects managed from the dashboard (projects in appsettings still work and show as read-only). */
+IF OBJECT_ID('rahgir.Projects') IS NULL
+BEGIN
+    CREATE TABLE rahgir.Projects
+    (
+        [Key]                 VARCHAR(64)    NOT NULL CONSTRAINT PK_Projects PRIMARY KEY,
+        Name                  NVARCHAR(100)  NOT NULL,
+        ServerSecretProtected NVARCHAR(MAX)  NULL,   -- encrypted with ASP.NET Data Protection
+        ReadKeyHash           CHAR(64)       NULL,   -- SHA-256 of the read-only key; the key itself is never stored
+        AllowedOrigins        NVARCHAR(MAX)  NULL,   -- JSON array
+        Settings              NVARCHAR(MAX)  NULL,   -- JSON ProjectSettings pushed to every install
+        IsEnabled             BIT            NOT NULL CONSTRAINT DF_Projects_IsEnabled DEFAULT 1,
+        CreatedAt             DATETIME2(0)   NOT NULL CONSTRAINT DF_Projects_CreatedAt DEFAULT SYSUTCDATETIME(),
+        UpdatedAt             DATETIME2(0)   NOT NULL CONSTRAINT DF_Projects_UpdatedAt DEFAULT SYSUTCDATETIME()
+    );
+END
+GO
+
+IF OBJECT_ID('rahgir.DashboardUsers') IS NULL
+BEGIN
+    CREATE TABLE rahgir.DashboardUsers
+    (
+        Username     NVARCHAR(64)   NOT NULL CONSTRAINT PK_DashboardUsers PRIMARY KEY,
+        PasswordHash VARCHAR(200)   NOT NULL,
+        Projects     NVARCHAR(MAX)  NOT NULL,   -- JSON array of project keys, ["*"] = all
+        IsAdmin      BIT            NOT NULL CONSTRAINT DF_DashboardUsers_IsAdmin DEFAULT 0,
+        CreatedAt    DATETIME2(0)   NOT NULL CONSTRAINT DF_DashboardUsers_CreatedAt DEFAULT SYSUTCDATETIME()
+    );
+END
+GO
+
+/* Only the Collector's writer login manages these tables. */
+GRANT SELECT, INSERT, UPDATE, DELETE ON rahgir.Projects TO rahgir_writer;
+GRANT SELECT, INSERT, UPDATE, DELETE ON rahgir.DashboardUsers TO rahgir_writer;
+DENY SELECT ON rahgir.Projects TO rahgir_reader;
+DENY SELECT ON rahgir.DashboardUsers TO rahgir_reader;
+GO

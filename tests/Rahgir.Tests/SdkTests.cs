@@ -133,3 +133,46 @@ public class SdkTests
         Assert.Equal(50, q.Dropped);
     }
 }
+
+public class InsightsTests
+{
+    [Fact]
+    public async Task Insights_route_requires_a_policy_and_rejects_anonymous_callers()
+    {
+        using var host = await new HostBuilder().ConfigureWebHost(web =>
+        {
+            web.UseTestServer();
+            web.ConfigureServices(s =>
+            {
+                s.AddRouting();
+                s.AddAuthentication("test").AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, NoAuth>("test", _ => { });
+                s.AddAuthorization(o => o.AddPolicy("AdminOnly", p => p.RequireRole("admin")));
+                s.AddRahgir(o => { o.ProjectKey = "verti"; o.CollectorUrl = "http://collector"; o.ReadKey = "rk_x"; });
+            });
+            web.Configure(app =>
+            {
+                app.UseRouting();
+                app.UseAuthentication();
+                app.UseAuthorization();
+                app.UseEndpoints(e =>
+                {
+                    Assert.Throws<ArgumentException>(() => e.MapRahgirInsights("/x", ""));
+                    e.MapRahgirInsights("/api/admin/rahgir", "AdminOnly");
+                });
+            });
+        }).StartAsync();
+        var res = await host.GetTestClient().GetAsync("/api/admin/rahgir/events");
+        Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
+        Assert.Empty(Drain(host.Services.GetRequiredService<EventQueue>()));
+    }
+
+    private static List<TrackEvent> Drain(EventQueue q) { var l = new List<TrackEvent>(); while (q.Reader.TryRead(out var e)) l.Add(e); return l; }
+
+    private sealed class NoAuth : Microsoft.AspNetCore.Authentication.AuthenticationHandler<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions>
+    {
+        public NoAuth(Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions> o,
+            Microsoft.Extensions.Logging.ILoggerFactory l, System.Text.Encodings.Web.UrlEncoder e) : base(o, l, e) { }
+        protected override Task<Microsoft.AspNetCore.Authentication.AuthenticateResult> HandleAuthenticateAsync()
+            => Task.FromResult(Microsoft.AspNetCore.Authentication.AuthenticateResult.NoResult());
+    }
+}

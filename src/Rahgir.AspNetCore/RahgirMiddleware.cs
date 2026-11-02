@@ -15,13 +15,14 @@ internal sealed class RahgirMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly RahgirOptions _options;
+    private readonly EffectiveSettings _settings;
     private readonly EventQueue _queue;
     private readonly Masker _masker;
     private readonly ILogger<RahgirMiddleware> _logger;
 
-    public RahgirMiddleware(RequestDelegate next, RahgirOptions options, EventQueue queue, Masker masker, ILogger<RahgirMiddleware> logger)
+    public RahgirMiddleware(RequestDelegate next, RahgirOptions options, EffectiveSettings settings, EventQueue queue, Masker masker, ILogger<RahgirMiddleware> logger)
     {
-        _next = next; _options = options; _queue = queue; _masker = masker; _logger = logger;
+        _next = next; _options = options; _settings = settings; _queue = queue; _masker = masker; _logger = logger;
     }
 
     public async Task InvokeAsync(HttpContext ctx)
@@ -33,7 +34,7 @@ internal sealed class RahgirMiddleware
         }
 
         string? body = null;
-        if (_options.CaptureRequestBody) body = await TryReadBodyAsync(ctx);
+        if (_settings.CaptureRequestBody) body = await TryReadBodyAsync(ctx);
 
         try
         {
@@ -49,20 +50,22 @@ internal sealed class RahgirMiddleware
 
     private bool ShouldConsider(HttpContext ctx)
     {
-        if (!_options.Enabled || !_options.TrackApiCalls) return false;
+        if (!_settings.Enabled || !_settings.TrackApiCalls) return false;
         var req = ctx.Request;
         if (_options.IgnorePreflight && (HttpMethods.IsOptions(req.Method) || HttpMethods.IsHead(req.Method))) return false;
         var path = req.Path.Value ?? "/";
-        foreach (var p in _options.IgnorePathPrefixes)
+        foreach (var p in _settings.IgnorePathPrefixes)
             if (path.StartsWith(p, StringComparison.OrdinalIgnoreCase)) return false;
-        if (_options.IncludePathPrefixes.Length > 0)
+        var include = _settings.IncludePathPrefixes;
+        if (include.Length > 0)
         {
             var ok = false;
-            foreach (var p in _options.IncludePathPrefixes)
+            foreach (var p in include)
                 if (path.StartsWith(p, StringComparison.OrdinalIgnoreCase)) { ok = true; break; }
             if (!ok) return false;
         }
-        if (_options.SampleRate < 1.0 && Random.Shared.NextDouble() >= _options.SampleRate) return false;
+        var rate = _settings.SampleRate;
+        if (rate < 1.0 && Random.Shared.NextDouble() >= rate) return false;
         return true;
     }
 
@@ -83,7 +86,7 @@ internal sealed class RahgirMiddleware
             RequestInfo.Fill(e, ctx, _options);
 
             Dictionary<string, JsonElement>? props = null;
-            if (_options.CaptureQueryString && ctx.Request.QueryString.HasValue)
+            if (_settings.CaptureQueryString && ctx.Request.QueryString.HasValue)
             {
                 props ??= new();
                 var q = new Dictionary<string, string>();

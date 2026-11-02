@@ -6,6 +6,8 @@ using Microsoft.Extensions.FileProviders;
 using Rahgir.Collector;
 using Rahgir.Collector.Dashboard;
 using Rahgir.Collector.Ingestion;
+using Rahgir.Collector.Management;
+using Microsoft.AspNetCore.DataProtection;
 using Rahgir.Collector.Security;
 using Rahgir.Collector.Storage;
 using Rahgir.Core;
@@ -41,7 +43,15 @@ builder.Services.AddSingleton<IEventStore, SqlServerEventStore>();
 builder.Services.AddSingleton<DashboardQueries>();
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<DashboardCsp>();
+builder.Services.AddSingleton<IAdminStore, SqlAdminStore>();
+builder.Services.AddSingleton<Registry>();
+builder.Services.AddHostedService<RegistryRefresher>();
 builder.Services.AddHostedService<EventWriter>();
+
+// Project server secrets are stored encrypted with these keys. Keep the folder private and backed up.
+var dataProtection = builder.Services.AddDataProtection().SetApplicationName("Rahgir")
+    .PersistKeysToFileSystem(new DirectoryInfo(options.DataProtectionKeysPath ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "keys")));
+if (OperatingSystem.IsWindows()) dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
 builder.Services.AddHostedService<RetentionService>();
 
 if (options.TrustForwardedHeaders)
@@ -79,6 +89,9 @@ builder.Services.AddRateLimiter(r =>
     r.AddPolicy(IngestEndpoints.ServerPolicy, ctx => RateLimitPartition.GetFixedWindowLimiter(
         "p:" + ctx.Request.Headers[RahgirHeaders.Project], _ => new FixedWindowRateLimiterOptions
         { PermitLimit = options.ServerRateLimitPerMinute, Window = TimeSpan.FromMinutes(1) }));
+    r.AddPolicy(ConfigAndReadEndpoints.ReadPolicy, ctx => RateLimitPartition.GetFixedWindowLimiter(
+        "read:" + ctx.Request.Headers.Authorization.ToString().GetHashCode(), _ => new FixedWindowRateLimiterOptions
+        { PermitLimit = options.ReadRateLimitPerMinute, Window = TimeSpan.FromMinutes(1) }));
     r.AddPolicy(DashboardEndpoints.LoginPolicy, ctx => RateLimitPartition.GetFixedWindowLimiter(
         "login:" + ctx.Connection.RemoteIpAddress, _ => new FixedWindowRateLimiterOptions
         { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
@@ -141,6 +154,8 @@ app.UseDashboardCsrfGuard();
 
 app.MapIngest();
 app.MapDashboardApi();
+app.MapAdmin();
+app.MapConfigAndRead();
 app.MapFallback(async ctx =>
 {
     // Unknown /api or /v1 paths are 404; everything else serves the dashboard shell.

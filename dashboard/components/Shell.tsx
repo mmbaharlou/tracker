@@ -16,7 +16,7 @@ const NAV = [
   { href: "/users/", label: "کاربران" },
 ];
 
-export function Shell({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+export function Shell({ title, actions, children, needsProject = true }: { title: string; actions?: ReactNode; children: ReactNode; needsProject?: boolean }) {
   const path = usePathname();
   const [me, setMe] = useState<Me | null>(null);
   const [project, setProject] = useState("");
@@ -50,6 +50,7 @@ export function Shell({ title, actions, children }: { title: string; actions?: R
           {NAV.map((n) => (
             <Link key={n.href} href={n.href} className={path === n.href ? "active" : ""}>{n.label}</Link>
           ))}
+          {me?.isAdmin && <Link href="/admin/" className={path === "/admin/" ? "active" : ""}>مدیریت</Link>}
         </nav>
         <div className="bottom">
           {me && me.projects.length > 0 && (
@@ -63,7 +64,7 @@ export function Shell({ title, actions, children }: { title: string; actions?: R
       <main className="main">
         <div className="topbar"><h1>{title}</h1>{actions}</div>
         {!me ? <div className="empty">در حال بارگذاری…</div>
-          : !project ? <div className="empty">هیچ پروژه‌ای برای شما تعریف نشده است.</div>
+          : !project && needsProject ? <div className="empty">هیچ پروژه‌ای برای شما تعریف نشده است.</div>
           : <ShellCtx.Provider value={{ me, project }}>{children}</ShellCtx.Provider>}
       </main>
     </div>

@@ -45,10 +45,16 @@ public class CollectorFactory : WebApplicationFactory<Program>
         builder.UseSetting("Rahgir:DashboardUsers:0:Username", "admin");
         builder.UseSetting("Rahgir:DashboardUsers:0:PasswordHash", PasswordHasher.Hash(Password));
         builder.UseSetting("Rahgir:DashboardUsers:0:IsAdmin", "true");
+        builder.UseSetting("Rahgir:DashboardUsers:1:Username", "viewer");
+        builder.UseSetting("Rahgir:DashboardUsers:1:PasswordHash", PasswordHasher.Hash(Password));
+        builder.UseSetting("Rahgir:DashboardUsers:1:Projects:0", "shop");
+        builder.UseSetting("Rahgir:DataProtectionKeysPath", Path.Combine(Path.GetTempPath(), "rahgir-test-keys-" + Guid.NewGuid()));
         builder.ConfigureServices(s =>
         {
             s.RemoveAll<IEventStore>();
             s.AddSingleton<IEventStore>(Store);
+            s.RemoveAll<Rahgir.Collector.Management.IAdminStore>();
+            s.AddSingleton<Rahgir.Collector.Management.IAdminStore, Rahgir.Collector.Management.InMemoryAdminStore>();
         });
     }
 }

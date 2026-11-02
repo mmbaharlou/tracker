@@ -52,6 +52,13 @@ public sealed class RahgirOptions
         "sub", System.Security.Claims.ClaimTypes.NameIdentifier, "userId", "user_id", "uid", "id",
     };
 
+    /// <summary>Follow the settings set for this project in the central dashboard (on/off, sampling, paths...).</summary>
+    public bool UseRemoteSettings { get; set; } = true;
+    public TimeSpan RemoteSettingsInterval { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>Read-only key of this project, used by MapRahgirInsights to show tracking data inside this app.</summary>
+    public string ReadKey { get; set; } = "";
+
     /// <summary>Extra keys to mask in bodies / properties (on top of password, token, card, ...).</summary>
     public string[] SensitiveKeys { get; set; } = Array.Empty<string>();
 }
