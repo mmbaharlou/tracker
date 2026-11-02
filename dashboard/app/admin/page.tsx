@@ -45,7 +45,7 @@ function Admin() {
     if (!confirm(`${label} پروژه «${p.name}» عوض شود؟ نصب‌هایی که کلید قبلی را دارند تا وقتی کلید جدید را بگذارید کار نمی‌کنند.`)) return;
     run(async () => {
       const r = await api<{ value: string }>(`admin/projects/${encodeURIComponent(p.key)}/rotate`, { what }, "POST");
-      setSecrets({ title: `${label} جدید «${p.name}»`, items: [[what === "server" ? "Rahgir:ServerSecret" : "Rahgir:ReadKey", r.value]] });
+      setSecrets({ title: `${label} جدید «${p.name}»`, items: [[what === "server" ? "Tracker:ServerSecret" : "Tracker:ReadKey", r.value]] });
     });
   };
 
@@ -130,7 +130,7 @@ function ProjectForm({ project, onClose, onSaved }: { project: Project | null; o
       if (project) { await api(`admin/projects/${encodeURIComponent(project.key)}`, undefined, "PUT", input); onSaved(null); }
       else {
         const r = await api<{ key: string; serverSecret: string; readKey: string }>("admin/projects", undefined, "POST", input);
-        onSaved({ title: `کلیدهای پروژه «${name || r.key}»`, items: [["Rahgir:ProjectKey", r.key], ["Rahgir:ServerSecret", r.serverSecret], ["Rahgir:ReadKey", r.readKey]] });
+        onSaved({ title: `کلیدهای پروژه «${name || r.key}»`, items: [["Tracker:ProjectKey", r.key], ["Tracker:ServerSecret", r.serverSecret], ["Tracker:ReadKey", r.readKey]] });
       }
     } catch (err: any) { setError(err.message); } finally { setBusy(false); }
   };

@@ -1,7 +1,7 @@
 // Production: static export served by the Collector (same origin, no Node server needed).
 // Development: `npm run dev` proxies /api to a locally running Collector.
 const isProd = process.env.NODE_ENV === "production";
-const collector = process.env.RAHGIR_COLLECTOR_URL || "http://localhost:5080";
+const collector = process.env.TRACKER_COLLECTOR_URL || "http://localhost:5080";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

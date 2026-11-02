@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <PackageId>Rahgir.Core</PackageId>
-    <Description>Shared contracts, masking and signing for the Rahgir user-tracking system.</Description>
-    <IsPackable>true</IsPackable>
-  </PropertyGroup>
-</Project>

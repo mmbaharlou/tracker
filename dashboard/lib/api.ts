@@ -11,7 +11,7 @@ export async function api<T = any>(path: string, params?: Record<string, string 
   const res = await fetch(url, {
     method,
     credentials: "same-origin",
-    headers: method !== "GET" ? { "Content-Type": "application/json", "X-Rahgir-Csrf": "1" } : undefined,
+    headers: method !== "GET" ? { "Content-Type": "application/json", "X-Tracker-Csrf": "1" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
   });

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <PackageId>Tracker.AspNetCore</PackageId>
+    <Description>Drop-in user activity tracking for ASP.NET Core Web APIs. Non-blocking, batched, signed.</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\Tracker.Core\Tracker.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tracker.Tests" />
+  </ItemGroup>
+</Project>

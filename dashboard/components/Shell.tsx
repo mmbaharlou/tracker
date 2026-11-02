@@ -25,7 +25,7 @@ export function Shell({ title, actions, children, needsProject = true }: { title
     api<Me>("me").then((m) => {
       setMe(m);
       let saved = "";
-      try { saved = localStorage.getItem("rahgir_dash_project") ?? ""; } catch { /* ignore */ }
+      try { saved = localStorage.getItem("tracker_dash_project") ?? ""; } catch { /* ignore */ }
       const fromUrl = new URLSearchParams(location.search).get("p") ?? "";
       const pick = [fromUrl, saved].find((k) => m.projects.some((p) => p.key === k)) ?? m.projects[0]?.key ?? "";
       setProject(pick);
@@ -34,7 +34,7 @@ export function Shell({ title, actions, children, needsProject = true }: { title
 
   const choose = (k: string) => {
     setProject(k);
-    try { localStorage.setItem("rahgir_dash_project", k); } catch { /* ignore */ }
+    try { localStorage.setItem("tracker_dash_project", k); } catch { /* ignore */ }
   };
 
   const logout = async () => {

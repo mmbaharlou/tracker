@@ -1,18 +1,18 @@
 /*
-  Rahgir schema for SQL Server 2016+ (columnstore + OPENJSON).
+  Tracker schema for SQL Server 2016+ (columnstore + OPENJSON).
   Run once on a dedicated database, e.g.:
-    CREATE DATABASE Rahgir;  GO  USE Rahgir;  GO  -- then this script
+    CREATE DATABASE Tracker;  GO  USE Tracker;  GO  -- then this script
   The script is idempotent (safe to run again).
 */
 SET NOCOUNT ON;
 GO
-IF SCHEMA_ID('rahgir') IS NULL EXEC('CREATE SCHEMA rahgir');
+IF SCHEMA_ID('tracker') IS NULL EXEC('CREATE SCHEMA tracker');
 GO
 
 /* ---------- Events: every page view, click, API call, custom event ---------- */
-IF OBJECT_ID('rahgir.Events') IS NULL
+IF OBJECT_ID('tracker.Events') IS NULL
 BEGIN
-    CREATE TABLE rahgir.Events
+    CREATE TABLE tracker.Events
     (
         Id           UNIQUEIDENTIFIER NOT NULL,
         ProjectKey   VARCHAR(64)      NOT NULL,
@@ -40,19 +40,19 @@ BEGIN
         Properties   NVARCHAR(MAX)    NULL
     );
     -- Columnstore: ~10x compression and fast aggregations for reports.
-    CREATE CLUSTERED COLUMNSTORE INDEX CCI_Events ON rahgir.Events;
+    CREATE CLUSTERED COLUMNSTORE INDEX CCI_Events ON tracker.Events;
     -- Rowstore indexes for timelines and lookups.
-    CREATE NONCLUSTERED INDEX IX_Events_User ON rahgir.Events(ProjectKey, UserId, Ts DESC) WHERE UserId IS NOT NULL;
-    CREATE NONCLUSTERED INDEX IX_Events_Anon ON rahgir.Events(ProjectKey, AnonymousId, Ts DESC) WHERE AnonymousId IS NOT NULL;
-    CREATE NONCLUSTERED INDEX IX_Events_Session ON rahgir.Events(ProjectKey, SessionId, Ts) WHERE SessionId IS NOT NULL;
-    CREATE NONCLUSTERED INDEX IX_Events_Time ON rahgir.Events(ProjectKey, ReceivedAt DESC) INCLUDE (Type);
+    CREATE NONCLUSTERED INDEX IX_Events_User ON tracker.Events(ProjectKey, UserId, Ts DESC) WHERE UserId IS NOT NULL;
+    CREATE NONCLUSTERED INDEX IX_Events_Anon ON tracker.Events(ProjectKey, AnonymousId, Ts DESC) WHERE AnonymousId IS NOT NULL;
+    CREATE NONCLUSTERED INDEX IX_Events_Session ON tracker.Events(ProjectKey, SessionId, Ts) WHERE SessionId IS NOT NULL;
+    CREATE NONCLUSTERED INDEX IX_Events_Time ON tracker.Events(ProjectKey, ReceivedAt DESC) INCLUDE (Type);
 END
 GO
 
 /* ---------- Users: one profile per identified user ---------- */
-IF OBJECT_ID('rahgir.Users') IS NULL
+IF OBJECT_ID('tracker.Users') IS NULL
 BEGIN
-    CREATE TABLE rahgir.Users
+    CREATE TABLE tracker.Users
     (
         ProjectKey   VARCHAR(64)    NOT NULL,
         UserId       NVARCHAR(128)  NOT NULL,
@@ -66,14 +66,14 @@ BEGIN
         LastIp       VARCHAR(45)    NULL,
         CONSTRAINT PK_Users PRIMARY KEY (ProjectKey, UserId)
     );
-    CREATE NONCLUSTERED INDEX IX_Users_LastSeen ON rahgir.Users(ProjectKey, LastSeen DESC);
+    CREATE NONCLUSTERED INDEX IX_Users_LastSeen ON tracker.Users(ProjectKey, LastSeen DESC);
 END
 GO
 
 /* ---------- Anonymous -> user links (merge visitor history after login) ---------- */
-IF OBJECT_ID('rahgir.Aliases') IS NULL
+IF OBJECT_ID('tracker.Aliases') IS NULL
 BEGIN
-    CREATE TABLE rahgir.Aliases
+    CREATE TABLE tracker.Aliases
     (
         ProjectKey  VARCHAR(64)   NOT NULL,
         AnonymousId VARCHAR(64)   NOT NULL,
@@ -81,17 +81,17 @@ BEGIN
         LinkedAt    DATETIME2(3)  NOT NULL,
         CONSTRAINT PK_Aliases PRIMARY KEY (ProjectKey, AnonymousId)
     );
-    CREATE NONCLUSTERED INDEX IX_Aliases_User ON rahgir.Aliases(ProjectKey, UserId);
+    CREATE NONCLUSTERED INDEX IX_Aliases_User ON tracker.Aliases(ProjectKey, UserId);
 END
 GO
 
 /* ---------- Upsert users + aliases from a batch (called by the Collector with JSON) ---------- */
-CREATE OR ALTER PROCEDURE rahgir.UpsertUsers @json NVARCHAR(MAX)
+CREATE OR ALTER PROCEDURE tracker.UpsertUsers @json NVARCHAR(MAX)
 AS
 BEGIN
     SET NOCOUNT ON;
     /* @json = [{ projectKey, userId, anonId, traits, ts, count, browser, os, device, ip }] (one row per user per batch) */
-    MERGE rahgir.Users WITH (HOLDLOCK) AS t
+    MERGE tracker.Users WITH (HOLDLOCK) AS t
     USING (
         SELECT ProjectKey, UserId, Traits, Ts, Cnt, Browser, Os, Device, Ip
         FROM OPENJSON(@json) WITH (
@@ -110,7 +110,7 @@ BEGIN
     WHEN NOT MATCHED THEN INSERT (ProjectKey, UserId, Traits, FirstSeen, LastSeen, EventCount, LastBrowser, LastOs, LastDevice, LastIp)
         VALUES (s.ProjectKey, s.UserId, s.Traits, s.Ts, s.Ts, s.Cnt, s.Browser, s.Os, s.Device, s.Ip);
 
-    MERGE rahgir.Aliases WITH (HOLDLOCK) AS t
+    MERGE tracker.Aliases WITH (HOLDLOCK) AS t
     USING (
         SELECT DISTINCT ProjectKey, AnonId, UserId
         FROM OPENJSON(@json) WITH (ProjectKey VARCHAR(64) '$.projectKey', AnonId VARCHAR(64) '$.anonId', UserId NVARCHAR(128) '$.userId')
@@ -121,14 +121,14 @@ END
 GO
 
 /* ---------- Retention: delete old events in small chunks ---------- */
-CREATE OR ALTER PROCEDURE rahgir.PurgeOldEvents @days INT, @chunk INT = 50000
+CREATE OR ALTER PROCEDURE tracker.PurgeOldEvents @days INT, @chunk INT = 50000
 AS
 BEGIN
     SET NOCOUNT ON;
     DECLARE @cutoff DATETIME2(3) = DATEADD(DAY, -@days, SYSUTCDATETIME()), @n INT = 1, @total INT = 0;
     WHILE @n > 0
     BEGIN
-        DELETE TOP (@chunk) FROM rahgir.Events WHERE ReceivedAt < @cutoff;
+        DELETE TOP (@chunk) FROM tracker.Events WHERE ReceivedAt < @cutoff;
         SET @n = @@ROWCOUNT; SET @total += @n;
     END
     SELECT @total AS Deleted;
@@ -136,44 +136,44 @@ END
 GO
 
 /* ---------- Right to be forgotten ---------- */
-CREATE OR ALTER PROCEDURE rahgir.ForgetUser @projectKey VARCHAR(64), @userId NVARCHAR(128)
+CREATE OR ALTER PROCEDURE tracker.ForgetUser @projectKey VARCHAR(64), @userId NVARCHAR(128)
 AS
 BEGIN
     SET NOCOUNT ON;
-    DELETE e FROM rahgir.Events e
+    DELETE e FROM tracker.Events e
     WHERE e.ProjectKey = @projectKey AND (e.UserId = @userId
-       OR e.AnonymousId IN (SELECT AnonymousId FROM rahgir.Aliases WHERE ProjectKey = @projectKey AND UserId = @userId));
-    DELETE FROM rahgir.Aliases WHERE ProjectKey = @projectKey AND UserId = @userId;
-    DELETE FROM rahgir.Users WHERE ProjectKey = @projectKey AND UserId = @userId;
+       OR e.AnonymousId IN (SELECT AnonymousId FROM tracker.Aliases WHERE ProjectKey = @projectKey AND UserId = @userId));
+    DELETE FROM tracker.Aliases WHERE ProjectKey = @projectKey AND UserId = @userId;
+    DELETE FROM tracker.Users WHERE ProjectKey = @projectKey AND UserId = @userId;
 END
 GO
 
 /* ---------- Least-privilege roles ----------
-   Collector writer login: member of rahgir_writer.  Dashboard reader: member of rahgir_reader.
+   Collector writer login: member of tracker_writer.  Dashboard reader: member of tracker_reader.
    Example:
-     CREATE LOGIN rahgir_collector WITH PASSWORD = '<strong password>';
-     CREATE USER rahgir_collector FOR LOGIN rahgir_collector;
-     ALTER ROLE rahgir_writer ADD MEMBER rahgir_collector;
-     CREATE LOGIN rahgir_dashboard WITH PASSWORD = '<another strong password>';
-     CREATE USER rahgir_dashboard FOR LOGIN rahgir_dashboard;
-     ALTER ROLE rahgir_reader ADD MEMBER rahgir_dashboard;
+     CREATE LOGIN tracker_collector WITH PASSWORD = '<strong password>';
+     CREATE USER tracker_collector FOR LOGIN tracker_collector;
+     ALTER ROLE tracker_writer ADD MEMBER tracker_collector;
+     CREATE LOGIN tracker_dashboard WITH PASSWORD = '<another strong password>';
+     CREATE USER tracker_dashboard FOR LOGIN tracker_dashboard;
+     ALTER ROLE tracker_reader ADD MEMBER tracker_dashboard;
 */
-IF DATABASE_PRINCIPAL_ID('rahgir_writer') IS NULL CREATE ROLE rahgir_writer;
-IF DATABASE_PRINCIPAL_ID('rahgir_reader') IS NULL CREATE ROLE rahgir_reader;
+IF DATABASE_PRINCIPAL_ID('tracker_writer') IS NULL CREATE ROLE tracker_writer;
+IF DATABASE_PRINCIPAL_ID('tracker_reader') IS NULL CREATE ROLE tracker_reader;
 GO
-GRANT INSERT ON rahgir.Events TO rahgir_writer;
-GRANT EXECUTE ON rahgir.UpsertUsers TO rahgir_writer;
-GRANT EXECUTE ON rahgir.PurgeOldEvents TO rahgir_writer;
-GRANT SELECT ON SCHEMA::rahgir TO rahgir_reader;
-GRANT EXECUTE ON rahgir.ForgetUser TO rahgir_reader;
+GRANT INSERT ON tracker.Events TO tracker_writer;
+GRANT EXECUTE ON tracker.UpsertUsers TO tracker_writer;
+GRANT EXECUTE ON tracker.PurgeOldEvents TO tracker_writer;
+GRANT SELECT ON SCHEMA::tracker TO tracker_reader;
+GRANT EXECUTE ON tracker.ForgetUser TO tracker_reader;
 GO
 
 /* =====================  Central management (v1.1)  ===================== */
 
 /* Projects managed from the dashboard (projects in appsettings still work and show as read-only). */
-IF OBJECT_ID('rahgir.Projects') IS NULL
+IF OBJECT_ID('tracker.Projects') IS NULL
 BEGIN
-    CREATE TABLE rahgir.Projects
+    CREATE TABLE tracker.Projects
     (
         [Key]                 VARCHAR(64)    NOT NULL CONSTRAINT PK_Projects PRIMARY KEY,
         Name                  NVARCHAR(100)  NOT NULL,
@@ -188,9 +188,9 @@ BEGIN
 END
 GO
 
-IF OBJECT_ID('rahgir.DashboardUsers') IS NULL
+IF OBJECT_ID('tracker.DashboardUsers') IS NULL
 BEGIN
-    CREATE TABLE rahgir.DashboardUsers
+    CREATE TABLE tracker.DashboardUsers
     (
         Username     NVARCHAR(64)   NOT NULL CONSTRAINT PK_DashboardUsers PRIMARY KEY,
         PasswordHash VARCHAR(200)   NOT NULL,
@@ -202,8 +202,8 @@ END
 GO
 
 /* Only the Collector's writer login manages these tables. */
-GRANT SELECT, INSERT, UPDATE, DELETE ON rahgir.Projects TO rahgir_writer;
-GRANT SELECT, INSERT, UPDATE, DELETE ON rahgir.DashboardUsers TO rahgir_writer;
-DENY SELECT ON rahgir.Projects TO rahgir_reader;
-DENY SELECT ON rahgir.DashboardUsers TO rahgir_reader;
+GRANT SELECT, INSERT, UPDATE, DELETE ON tracker.Projects TO tracker_writer;
+GRANT SELECT, INSERT, UPDATE, DELETE ON tracker.DashboardUsers TO tracker_writer;
+DENY SELECT ON tracker.Projects TO tracker_reader;
+DENY SELECT ON tracker.DashboardUsers TO tracker_reader;
 GO

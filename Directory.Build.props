@@ -6,7 +6,7 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <Version>1.1.0</Version>
     <Authors>mehdi</Authors>
-    <Product>Rahgir</Product>
+    <Product>Tracker</Product>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>

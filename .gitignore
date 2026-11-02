@@ -6,3 +6,4 @@ dist/
 *.user
 .vs/
 appsettings.Local.json
+dashboard/out/

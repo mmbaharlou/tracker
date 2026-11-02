@@ -1,13 +1,13 @@
-# رهگیر (Rahgir)
+# Tracker
 
 سیستم رهگیری کاربران برای پروژه‌های ASP.NET Core + Next.js. فقط رفتار کاربر را ثبت می‌کند (مانیتورینگ نیست):
 هر کاربر چه صفحه‌ای دید، روی چه چیزی کلیک کرد، کدام API را صدا زد، چه رویدادی ساخت، و همه این‌ها در یک تایم‌لاین.
 
 | بخش | مسیر | کار |
 | --- | --- | --- |
-| `Rahgir.AspNetCore` | `src/Rahgir.AspNetCore` | پکیج NuGet برای API شما: ثبت خودکار همه endpoint ها + `Track()` |
-| `@rahgir/next` | `packages/rahgir-next` | پکیج npm برای Next.js: بازدید صفحه، کلیک، فرم، identify، `track()` |
-| `Rahgir.Collector` | `src/Rahgir.Collector` | سرویس دریافت داده + API و صفحات داشبورد (یک سایت IIS) |
+| `Tracker.AspNetCore` | `src/Tracker.AspNetCore` | پکیج NuGet برای API شما: ثبت خودکار همه endpoint ها + `Track()` |
+| `@tracker/next` | `packages/tracker-next` | پکیج npm برای Next.js: بازدید صفحه، کلیک، فرم، identify، `track()` |
+| `Tracker.Collector` | `src/Tracker.Collector` | سرویس دریافت داده + API و صفحات داشبورد (یک سایت IIS) |
 | داشبورد | `dashboard` | سورس داشبورد فارسی (Next.js، خروجی استاتیک داخل Collector) |
 | دیتابیس | `db/schema.sql` | جداول SQL Server |
 | پکیج‌های آماده | `artifacts/` | فایل‌های `.nupkg` و `.tgz` برای نصب مستقیم |
@@ -16,24 +16,24 @@
 
 1. یک دیتابیس خالی بسازید و `db/schema.sql` را روی آن اجرا کنید:
    ```sql
-   CREATE DATABASE Rahgir;
+   CREATE DATABASE Tracker;
    ```
 2. دو لاگین با کمترین دسترسی بسازید (نمونه در انتهای `schema.sql`):
-   `rahgir_collector` عضو `rahgir_writer` و `rahgir_dashboard` عضو `rahgir_reader`.
+   `tracker_collector` عضو `tracker_writer` و `tracker_dashboard` عضو `tracker_reader`.
 3. برای هر پروژه یک کلید سرور و برای خودتان رمز داشبورد بسازید:
    ```bash
-   cd src/Rahgir.Collector
+   cd src/Tracker.Collector
    dotnet run -- new-secret      # کلید سرور (۶۴ کاراکتر)
    dotnet run -- hash-password   # هش رمز داشبورد (حداقل ۱۰ کاراکتر)
    ```
-4. فایل `src/Rahgir.Collector/appsettings.Local.json` بسازید (در git نمی‌رود):
+4. فایل `src/Tracker.Collector/appsettings.Local.json` بسازید (در git نمی‌رود):
    ```json
    {
      "ConnectionStrings": {
-       "RahgirWriter": "Server=.;Database=Rahgir;User Id=rahgir_collector;Password=...;TrustServerCertificate=True",
-       "RahgirReader": "Server=.;Database=Rahgir;User Id=rahgir_dashboard;Password=...;TrustServerCertificate=True"
+       "TrackerWriter": "Server=.;Database=Tracker;User Id=tracker_collector;Password=...;TrustServerCertificate=True",
+       "TrackerReader": "Server=.;Database=Tracker;User Id=tracker_dashboard;Password=...;TrustServerCertificate=True"
      },
-     "Rahgir": {
+     "Tracker": {
        "Projects": [
          { "Key": "shop", "Name": "فروشگاه", "ServerSecret": "<new-secret>", "AllowedOrigins": [ "https://shop.ir" ] }
        ],
@@ -45,7 +45,7 @@
    ```
 5. منتشر و روی IIS (یا هر جای دیگر) با HTTPS اجرا کنید:
    ```bash
-   dotnet publish src/Rahgir.Collector -c Release -o publish/collector
+   dotnet publish src/Tracker.Collector -c Release -o publish/collector
    ```
    داشبورد روی همان آدرس باز می‌شود، مثلاً `https://track.mydomain.ir`.
    اگر پشت IIS ARR / nginx / Cloudflare است، `TrustForwardedHeaders` و `KnownProxies` را تنظیم کنید.
@@ -54,21 +54,21 @@
 
 ```bash
 # یک بار: فید محلی
-dotnet nuget add source D:\track\Rahgir\artifacts\nuget -n rahgir
-dotnet add package Rahgir.AspNetCore
+dotnet nuget add source D:\track\Tracker\artifacts\nuget -n tracker
+dotnet add package Tracker.AspNetCore
 ```
 
 ```csharp
 // Program.cs
-builder.Services.AddRahgir(builder.Configuration);
+builder.Services.AddTracker(builder.Configuration);
 ...
 app.UseRouting();
-app.UseRahgir();          // بعد از UseRouting، قبل از Map ها
+app.UseTracker();          // بعد از UseRouting، قبل از Map ها
 ```
 
 ```json
 // appsettings.json  (ServerSecret را در User Secrets یا متغیر محیطی بگذارید)
-"Rahgir": { "ProjectKey": "shop", "CollectorUrl": "https://track.mydomain.ir", "ServerSecret": "..." }
+"Tracker": { "ProjectKey": "shop", "CollectorUrl": "https://track.mydomain.ir", "ServerSecret": "..." }
 ```
 
 همین. از این به بعد هر درخواست به API با کاربر (از Claim های `sub` / `NameIdentifier` / `userId`)، مسیر، نتیجه، IP و دستگاه ثبت می‌شود.
@@ -82,48 +82,48 @@ app.UseRahgir();          // بعد از UseRouting، قبل از Map ها
 
 app.MapPost("/api/pay", ...).TrackAs("پرداخت");   // Minimal API
 
-public class OrderService(IRahgirTracker tracker)
+public class OrderService(ITracker tracker)
 {
     public void Paid(Order o) => tracker.Track("OrderPaid", new { o.Id, o.Amount });
 }
 ```
 
-تنظیمات مهم `RahgirOptions`: `Enabled`، `SampleRate`، `IncludePathPrefixes` (مثلاً `["/api"]`)، `IgnorePathPrefixes`،
+تنظیمات مهم `TrackerOptions`: `Enabled`، `SampleRate`، `IncludePathPrefixes` (مثلاً `["/api"]`)، `IgnorePathPrefixes`،
 `CaptureRequestBody` (پیش‌فرض خاموش)، `AnonymizeIp`، `SensitiveKeys`.
 
 ## ۳. اضافه کردن به هر پروژه Next.js
 
 ```bash
-npm i D:/track/Rahgir/artifacts/npm/rahgir-next-1.1.0.tgz
+npm i D:/track/Tracker/artifacts/npm/tracker-next-1.1.0.tgz
 ```
 
 ```tsx
 // app/layout.tsx  (یا pages/_app.tsx)
-import { RahgirProvider } from "@rahgir/next";
+import { TrackerProvider } from "@tracker/next";
 
-<RahgirProvider projectKey="shop" collectorUrl="https://track.mydomain.ir"
+<TrackerProvider projectKey="shop" collectorUrl="https://track.mydomain.ir"
                 linkApiOrigins={["https://api.shop.ir"]}>
   {children}
-</RahgirProvider>
+</TrackerProvider>
 ```
 
 ```ts
-import { rahgir } from "@rahgir/next";
-rahgir.identify(user.id, { name: user.fullName });   // بعد از لاگین
-rahgir.track("AddToCart", { productId: 12 });
-rahgir.reset();                                      // بعد از خروج
-axios.get(url, { headers: rahgir.headers() });       // اگر axios دارید (fetch خودکار است)
+import { tracker } from "@tracker/next";
+tracker.identify(user.id, { name: user.fullName });   // بعد از لاگین
+tracker.track("AddToCart", { productId: 12 });
+tracker.reset();                                      // بعد از خروج
+axios.get(url, { headers: tracker.headers() });       // اگر axios دارید (fetch خودکار است)
 ```
 
-- `data-rahgir="اسم"` روی هر المان، اسم کلیک را مشخص می‌کند. `data-rahgir-ignore` یا کلاس `rahgir-ignore` آن بخش را ثبت نمی‌کند.
+- `data-tracker="اسم"` روی هر المان، اسم کلیک را مشخص می‌کند. `data-tracker-ignore` یا کلاس `tracker-ignore` آن بخش را ثبت نمی‌کند.
 - مقدار input ها هرگز ارسال نمی‌شود. فیلدهای password کاملاً نادیده گرفته می‌شوند.
 - برای اینکه درخواست‌های API به همان بازدیدکننده وصل شوند، در CORS بک‌اند هدرهای
-  `X-Rahgir-Session` و `X-Rahgir-Anon` را مجاز کنید:
-  `policy.WithHeaders("Content-Type", "Authorization", "X-Rahgir-Session", "X-Rahgir-Anon")`.
+  `X-Tracker-Session` و `X-Tracker-Anon` را مجاز کنید:
+  `policy.WithHeaders("Content-Type", "Authorization", "X-Tracker-Session", "X-Tracker-Anon")`.
 
 ## مدیریت مرکزی (چند پروژه، یک داشبورد)
 
-یک Collector مرکزی (مثلاً `https://rahgir.rhinox.ir`) همه پروژه‌ها را نگه می‌دارد. از منوی **مدیریت** در داشبورد (فقط مدیرها):
+یک Collector مرکزی (مثلاً `https://tracker.rhinox.ir`) همه پروژه‌ها را نگه می‌دارد. از منوی **مدیریت** در داشبورد (فقط مدیرها):
 
 - **پروژه جدید:** کلید (مثلاً `verti`)، نام و Origin های مجاز را وارد کنید. `ServerSecret` و `ReadKey` فقط همان لحظه یک بار نمایش داده می‌شوند.
   کلید سرور رمزنگاری‌شده (ASP.NET Data Protection) و از کلید خواندن فقط هش ذخیره می‌شود.
@@ -134,7 +134,7 @@ axios.get(url, { headers: rahgir.headers() });       // اگر axios دارید 
 - **کاربران داشبورد:** ساخت کاربر، تعیین پروژه‌هایی که می‌بیند و نقش مدیر. حذف کاربر دسترسی او را فوراً قطع می‌کند.
 
 پروژه‌ها و کاربرانی که در `appsettings` تعریف شده‌اند هم کار می‌کنند و در این صفحه «از فایل تنظیمات» و فقط‌خواندنی نمایش داده می‌شوند.
-پوشه کلیدهای Data Protection (پیش‌فرض `App_Data/keys`، قابل تغییر با `Rahgir:DataProtectionKeysPath`) را خصوصی نگه دارید و بکاپ بگیرید؛
+پوشه کلیدهای Data Protection (پیش‌فرض `App_Data/keys`، قابل تغییر با `Tracker:DataProtectionKeysPath`) را خصوصی نگه دارید و بکاپ بگیرید؛
 روی ویندوز با DPAPI ماشین هم رمز می‌شود.
 
 ## نمایش داده‌ها داخل خود پروژه (مثلاً پنل ادمین ورتی)
@@ -142,24 +142,24 @@ axios.get(url, { headers: rahgir.headers() });       // اگر axios دارید 
 بک‌اند پروژه (کلید خواندن فقط در سرور می‌ماند و احراز هویت خود پروژه از آن محافظت می‌کند):
 
 ```json
-"Rahgir": { "ProjectKey": "verti", "CollectorUrl": "https://rahgir.rhinox.ir", "ServerSecret": "...", "ReadKey": "rk_..." }
+"Tracker": { "ProjectKey": "verti", "CollectorUrl": "https://tracker.rhinox.ir", "ServerSecret": "...", "ReadKey": "rk_..." }
 ```
 
 ```csharp
-app.MapRahgirInsights("/api/admin/rahgir", "AdminOnly");   // اسم Policy احراز هویت خود پروژه؛ اجباری است
+app.MapTrackerInsights("/api/admin/tracker", "AdminOnly");   // اسم Policy احراز هویت خود پروژه؛ اجباری است
 ```
 
 فرانت پروژه:
 
 ```tsx
-import { RahgirUserActivity, RahgirOverview, RahgirRecentEvents } from "@rahgir/next/insights";
+import { TrackerUserActivity, TrackerOverview, TrackerRecentEvents } from "@tracker/next/insights";
 
-<RahgirOverview baseUrl="/api/admin/rahgir" days={30} />
-<RahgirUserActivity baseUrl="/api/admin/rahgir" userId={user.id}
+<TrackerOverview baseUrl="/api/admin/tracker" days={30} />
+<TrackerUserActivity baseUrl="/api/admin/tracker" userId={user.id}
                     headers={{ Authorization: `Bearer ${token}` }} />   // اگر API با JWT است
 ```
 
-برای UI دلخواه: `useRahgirInsights(source, "users" | "user" | "events" | "overview" | "session", params)`.
+برای UI دلخواه: `useTrackerInsights(source, "users" | "user" | "events" | "overview" | "session", params)`.
 API مستقیم Collector هم در دسترس است: `GET /v1/read/{overview|events|users|user|session}` با هدر `Authorization: Bearer rk_...`.
 
 ## عملکرد
@@ -177,7 +177,7 @@ API مستقیم Collector هم در دسترس است: `GET /v1/read/{overview|
   CSP سخت‌گیرانه با هش اسکریپت‌ها، `X-Frame-Options: DENY`، امکان محدود کردن داشبورد به IP های خاص (`DashboardAllowedIps`).
 - ماسک خودکار password، token، کارت، CVV، کد ملی، شبا و هدر Authorization در SDK و دوباره در Collector.
 - SDK هیچ endpoint یا پورتی در پروژه شما باز نمی‌کند و هیچ Exception ای به برنامه شما نمی‌دهد.
-- حذف کامل داده یک کاربر از داشبورد (ادمین) یا `EXEC rahgir.ForgetUser`.
+- حذف کامل داده یک کاربر از داشبورد (ادمین) یا `EXEC tracker.ForgetUser`.
 - نکته: `userId` ای که مرورگر با `identify` می‌فرستد از سمت کاربر قابل تغییر است (مثل همه ابزارهای مشابه)؛
   رویدادهای API که از سمت سرور و از روی Claim ها ثبت می‌شوند قابل جعل نیستند.
 
@@ -185,7 +185,7 @@ API مستقیم Collector هم در دسترس است: `GET /v1/read/{overview|
 
 ```bash
 dotnet test                                   # تست‌های بک‌اند و Collector
-cd packages/rahgir-next && npm run build && node test/browser.e2e.mjs   # تست مرورگر (Playwright)
+cd packages/tracker-next && npm run build && node test/browser.e2e.mjs   # تست مرورگر (Playwright)
 cd dashboard && npm run dev                   # داشبورد روی 3100، API از Collector روی 5080
 cd dashboard && npm run build && npm run publish-to-collector
 ```

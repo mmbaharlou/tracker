@@ -13,7 +13,7 @@ export default function Login() {
     try {
       const res = await fetch("/api/dash/login", {
         method: "POST", credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "X-Rahgir-Csrf": "1" },
+        headers: { "Content-Type": "application/json", "X-Tracker-Csrf": "1" },
         body: JSON.stringify({ username, password }),
       });
       if (res.ok) { location.href = "/"; return; }
