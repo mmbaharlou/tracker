@@ -161,7 +161,7 @@ GO
 IF DATABASE_PRINCIPAL_ID('tracker_writer') IS NULL CREATE ROLE tracker_writer;
 IF DATABASE_PRINCIPAL_ID('tracker_reader') IS NULL CREATE ROLE tracker_reader;
 GO
-GRANT INSERT ON tracker.Events TO tracker_writer;
+GRANT INSERT, SELECT ON tracker.Events TO tracker_writer;   -- SqlBulkCopy reads the table metadata (needs SELECT)
 GRANT EXECUTE ON tracker.UpsertUsers TO tracker_writer;
 GRANT EXECUTE ON tracker.PurgeOldEvents TO tracker_writer;
 GRANT SELECT ON SCHEMA::tracker TO tracker_reader;

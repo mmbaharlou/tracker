@@ -12,6 +12,15 @@
 | دیتابیس | `db/schema.sql` | جداول SQL Server |
 | پکیج‌های آماده | `artifacts/` | فایل‌های `.nupkg` و `.tgz` برای نصب مستقیم |
 
+```
+مرورگر (@tracker/next) ──┐                      ┌── داشبورد فارسی (کاربران، تایم‌لاین، رویدادها)
+                          ├─► Tracker.Collector ─┤
+API (Tracker.AspNetCore) ─┘   HMAC + Rate limit   └── SQL Server (columnstore)
+```
+
+- **نسخه‌ی در حال اجرا:** `https://tracker.rhinox.ir` (روی سرور ویندوز، پشت IIS، با SSL رایگان win-acme). اولین پروژه‌ی وصل‌شده: دزمو (`desmo`).
+- **پیش‌نیاز:** .NET 8 به بالا (روی سرورهایی که فقط .NET 10 دارند با `DOTNET_ROLL_FORWARD=Major` اجرا می‌شود)، SQL Server 2016 به بالا، Node 20 به بالا فقط برای بیلد داشبورد.
+
 ## ۱. راه‌اندازی یک‌باره (Collector + دیتابیس)
 
 1. یک دیتابیس خالی بسازید و `db/schema.sql` را روی آن اجرا کنید:
@@ -49,6 +58,27 @@
    ```
    داشبورد روی همان آدرس باز می‌شود، مثلاً `https://track.mydomain.ir`.
    اگر پشت IIS ARR / nginx / Cloudflare است، `TrustForwardedHeaders` و `KnownProxies` را تنظیم کنید.
+
+### نصب روی سرور ویندوز به‌صورت سرویس (همان روشی که tracker.rhinox.ir نصب شده)
+
+1. Publish: `dotnet publish src/Tracker.Collector -c Release -r win-x64 --self-contained false -p:RollForward=Major -o C:\apps\tracker`
+2. `appsettings.Local.json` را کنار فایل‌ها بگذارید (ConnectionStringها با `Server=127.0.0.1`، و `"TrustForwardedHeaders": true, "KnownProxies": ["127.0.0.1", "::1"]`).
+3. سرویس ویندوز با [WinSW](https://github.com/winsw/winsw): فایل `tracker-collector.xml` کنار exe:
+   ```xml
+   <service>
+     <id>tracker-collector</id><name>Tracker Collector</name>
+     <executable>C:\apps\tracker\Tracker.Collector.exe</executable>
+     <env name="ASPNETCORE_URLS" value="http://127.0.0.1:5085"/>
+     <env name="DOTNET_gcServer" value="0"/><env name="DOTNET_GCConserveMemory" value="7"/>
+     <startmode>Automatic</startmode><onfailure action="restart" delay="10 sec"/>
+     <logpath>C:\apps\tracker\logs</logpath>
+   </service>
+   ```
+   سپس `tracker-collector.exe install` و `Start-Service tracker-collector`.
+4. سایت IIS برای دامنه با URL Rewrite + ARR که همه‌ی درخواست‌ها را به `http://127.0.0.1:5085` بفرستد (و `HTTP_X_FORWARDED_PROTO` = `https`)، و گرفتن SSL با win-acme.
+
+> **نکته:** کاربر `tracker_writer` علاوه بر `INSERT` باید روی `tracker.Events` دسترسی `SELECT` هم داشته باشد، چون `SqlBulkCopy` قبل از نوشتن ساختار جدول را می‌خواند. `db/schema.sql` این دسترسی را می‌دهد. اگر دیتابیس را با نسخه‌ی قدیمی‌تر ساخته‌اید، این را اجرا کنید:
+> `GRANT SELECT ON tracker.Events TO tracker_writer;`
 
 ## ۲. اضافه کردن به هر پروژه بک‌اند
 
