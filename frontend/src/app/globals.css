@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+/*
+ * Same design language as BimeYar's admin (frosted "glass" surfaces over a soft light field), tuned for a data-dense panel:
+ * calmer background, tabular numbers, compact tables. Text stays dark on ≥ 70% white surfaces (contrast ≥ 4.5:1).
+ */
+:root {
+  --bg: #eef2f8;
+  --surface: rgb(255 255 255 / 0.78);
+  --surface-solid: #ffffff;
+  --surface-2: rgb(241 245 249 / 0.75);
+  --ink: #0f172a;
+  --ink-2: #334155;
+  --ink-3: #5b6577;
+  --line: rgb(148 163 184 / 0.3);
+  --line-strong: rgb(100 116 139 / 0.42);
+  --brand: #0f766e;
+  --brand-strong: #115e59;
+  --brand-ink: #ffffff;
+  --brand-soft: rgb(204 251 241 / 0.85);
+  --accent: #b45309;
+  --accent-soft: rgb(254 243 199 / 0.9);
+  --danger: #b91c1c;
+  --danger-soft: rgb(254 226 226 / 0.92);
+  --ok: #15803d;
+  --ok-soft: rgb(220 252 231 / 0.9);
+  --info: #1d4ed8;
+  --info-soft: rgb(219 234 254 / 0.9);
+  --glass-blur: 16px;
+  --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.85), inset 0 0 0 1px rgb(255 255 255 / 0.35);
+  --shadow-sm: var(--glass-edge), 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 20px -14px rgb(15 23 42 / 0.18);
+  --shadow-md: var(--glass-edge), 0 2px 4px rgb(15 23 42 / 0.04), 0 18px 40px -22px rgb(15 23 42 / 0.28);
+  --shadow-lg: var(--glass-edge), 0 4px 10px rgb(15 23 42 / 0.05), 0 32px 64px -28px rgb(15 23 42 / 0.4);
+  --c1: #0f766e;
+  --c2: #db2777;
+  --c3: #d97706;
+  --c4: #059669;
+  --c5: #7c3aed;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-solid: var(--surface-solid);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --shadow-card: var(--shadow-md);
+  --shadow-soft: var(--shadow-sm);
+  --shadow-lift: var(--shadow-lg);
+  --font-sans: "Vazirmatn Variable", Tahoma, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  --animate-rise: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.75;
+  min-height: 100dvh;
+  font-feature-settings: "ss01";
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20vmax;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(36vmax 36vmax at 10% 12%, color-mix(in srgb, var(--brand) 22%, transparent), transparent 60%),
+    radial-gradient(32vmax 32vmax at 90% 10%, rgb(129 140 248 / 0.18), transparent 60%),
+    radial-gradient(40vmax 40vmax at 80% 90%, rgb(52 211 153 / 0.16), transparent 62%),
+    linear-gradient(165deg, #f5f8fc 0%, #edf2f9 60%, #eef5f3 100%);
+}
+
+.bg-surface, [class*="bg-surface/"], .bg-surface-2, .glass {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+}
+.bg-brand { background-image: linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0) 55%); }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --surface: #ffffff; --surface-2: #f1f5f9; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root { --surface: #ffffff; --surface-2: #f1f5f9; }
+  .bg-surface, .bg-surface-2, .glass { backdrop-filter: none; }
+}
+
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+.ltr { direction: ltr; unicode-bidi: isolate; }
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+pre { font-family: var(--font-mono); }

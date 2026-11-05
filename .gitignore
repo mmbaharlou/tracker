@@ -1,9 +1,28 @@
+# .NET
 bin/
 obj/
-node_modules/
-.next/
-dist/
 *.user
 .vs/
+backend/**/appsettings.Development.json
+backend/**/appsettings.Production.json
+backend/**/appsettings.Local.json
 appsettings.Local.json
-dashboard/out/
+App_Data/
+publish/
+
+# Node / Next.js
+node_modules/
+.next/
+.next-*/
+out/
+dist/
+frontend/.env*.local
+frontend/next-env.d.ts
+*.tsbuildinfo
+
+# Archives and OS / editors
+*.tar.gz
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

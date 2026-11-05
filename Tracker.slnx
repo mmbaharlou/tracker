@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/Tracker.Api/Tracker.Api.csproj" />
+    <Project Path="backend/Tracker.Core/Tracker.Core.csproj" />
+    <Project Path="backend/Tracker.AspNetCore/Tracker.AspNetCore.csproj" />
+    <Project Path="backend/Tracker.Tests/Tracker.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -2,83 +2,101 @@
 
 سیستم رهگیری کاربران برای پروژه‌های ASP.NET Core + Next.js. فقط رفتار کاربر را ثبت می‌کند (مانیتورینگ نیست):
 هر کاربر چه صفحه‌ای دید، روی چه چیزی کلیک کرد، کدام API را صدا زد، چه رویدادی ساخت، و همه این‌ها در یک تایم‌لاین.
+همه‌ی سایت‌هایی که پکیج را نصب کرده‌اند از یک پنل مرکزی (`https://tracker.rhinox.ir`) مدیریت می‌شوند.
+
+ساختار پروژه مثل بیمه‌یار است: بک‌اند ASP.NET Core 10 در `backend`، پنل Next.js 15 در `frontend`.
 
 | بخش | مسیر | کار |
 | --- | --- | --- |
-| `Tracker.AspNetCore` | `src/Tracker.AspNetCore` | پکیج NuGet برای API شما: ثبت خودکار همه endpoint ها + `Track()` |
-| `@tracker/next` | `packages/tracker-next` | پکیج npm برای Next.js: بازدید صفحه، کلیک، فرم، identify، `track()` |
-| `Tracker.Collector` | `src/Tracker.Collector` | سرویس دریافت داده + API و صفحات داشبورد (یک سایت IIS) |
-| داشبورد | `dashboard` | سورس داشبورد فارسی (Next.js، خروجی استاتیک داخل Collector) |
-| دیتابیس | `db/schema.sql` | جداول SQL Server |
+| API مرکزی | `backend/Tracker.Api` | دریافت داده از سایت‌ها (`/v1/*`)، API پنل (`/api/*`)، ورود و کاربران، پروژه‌ها |
+| پنل | `frontend` | پنل فارسی Next.js 15 + Tailwind 4 (همان سیستم طراحی بیمه‌یار) |
+| پکیج بک‌اند | `backend/Tracker.AspNetCore` + `backend/Tracker.Core` | پکیج NuGet برای API سایت‌ها: ثبت خودکار همه endpointها + `Track()` |
+| پکیج فرانت | `packages/tracker-next` | پکیج npm برای Next.js: بازدید صفحه، کلیک، فرم، identify، `track()` |
+| تست‌ها | `backend/Tracker.Tests` | تست‌های ورود، دسترسی، دریافت داده و پکیج‌ها |
+| نصب روی سرور | `deploy/windows` | سرویس‌های ویندوز + IIS + SSL |
 | پکیج‌های آماده | `artifacts/` | فایل‌های `.nupkg` و `.tgz` برای نصب مستقیم |
 
 ```
-مرورگر (@tracker/next) ──┐                      ┌── داشبورد فارسی (کاربران، تایم‌لاین، رویدادها)
-                          ├─► Tracker.Collector ─┤
-API (Tracker.AspNetCore) ─┘   HMAC + Rate limit   └── SQL Server (columnstore)
+مرورگر (@tracker/next) ──┐                       ┌── پنل Next.js (frontend) ── /api ──┐
+                          ├─► IIS ── /v1 ──► Tracker.Api ◄─────────────────────────────┘
+API (Tracker.AspNetCore) ─┘   HMAC + Rate limit       └── SQL Server (EF Core برای مدیریت، columnstore + SqlBulkCopy برای رویدادها)
 ```
 
-- **نسخه‌ی در حال اجرا:** `https://tracker.rhinox.ir` (روی سرور ویندوز، پشت IIS، با SSL رایگان win-acme). اولین پروژه‌ی وصل‌شده: دزمو (`desmo`).
-- **پیش‌نیاز:** .NET 8 به بالا (روی سرورهایی که فقط .NET 10 دارند با `DOTNET_ROLL_FORWARD=Major` اجرا می‌شود)، SQL Server 2016 به بالا، Node 20 به بالا فقط برای بیلد داشبورد.
+## لایه‌ی داده
 
-## ۱. راه‌اندازی یک‌باره (Collector + دیتابیس)
+- **EF Core + migration** برای داده‌های مدیریتی: کاربران پنل، نشست‌ها، گزارش امنیتی و پروژه‌ها (`Data/AppDbContext.cs`). migrationها هنگام اجرا خودکار اعمال می‌شوند.
+- **Dapper + SqlBulkCopy** برای رویدادهای پرحجم (`tracker.Events`، `Users`، `Aliases`). جدول‌ها و procedureها در `Data/Sql/events.sql` هستند و migration اولیه آن‌ها را می‌سازد.
+- migration جدید: از `backend/Tracker.Api`:
+  `dotnet tool restore` و بعد `dotnet ef migrations add <Name> -o Data/Migrations`
 
-1. یک دیتابیس خالی بسازید و `db/schema.sql` را روی آن اجرا کنید:
-   ```sql
-   CREATE DATABASE Tracker;
-   ```
-2. دو لاگین با کمترین دسترسی بسازید (نمونه در انتهای `schema.sql`):
-   `tracker_collector` عضو `tracker_writer` و `tracker_dashboard` عضو `tracker_reader`.
-3. برای هر پروژه یک کلید سرور و برای خودتان رمز داشبورد بسازید:
-   ```bash
-   cd src/Tracker.Collector
-   dotnet run -- new-secret      # کلید سرور (۶۴ کاراکتر)
-   dotnet run -- hash-password   # هش رمز داشبورد (حداقل ۱۰ کاراکتر)
-   ```
-4. فایل `src/Tracker.Collector/appsettings.Local.json` بسازید (در git نمی‌رود):
-   ```json
-   {
-     "ConnectionStrings": {
-       "TrackerWriter": "Server=.;Database=Tracker;User Id=tracker_collector;Password=...;TrustServerCertificate=True",
-       "TrackerReader": "Server=.;Database=Tracker;User Id=tracker_dashboard;Password=...;TrustServerCertificate=True"
-     },
-     "Tracker": {
-       "Projects": [
-         { "Key": "shop", "Name": "فروشگاه", "ServerSecret": "<new-secret>", "AllowedOrigins": [ "https://shop.ir" ] }
-       ],
-       "DashboardUsers": [
-         { "Username": "mehdi", "PasswordHash": "<hash-password>", "Projects": [ "*" ], "IsAdmin": true }
-       ]
-     }
-   }
-   ```
-5. منتشر و روی IIS (یا هر جای دیگر) با HTTPS اجرا کنید:
-   ```bash
-   dotnet publish src/Tracker.Collector -c Release -o publish/collector
-   ```
-   داشبورد روی همان آدرس باز می‌شود، مثلاً `https://track.mydomain.ir`.
-   اگر پشت IIS ARR / nginx / Cloudflare است، `TrustForwardedHeaders` و `KnownProxies` را تنظیم کنید.
+## ورود حرفه‌ای به پنل
 
-### نصب روی سرور ویندوز به‌صورت سرویس (همان روشی که tracker.rhinox.ir نصب شده)
+- نام کاربری و رمز، با هش PBKDF2-SHA256 (۲۱۰ هزار دور).
+- **نشست سمت سرور** در کوکی `HttpOnly` + `Secure` + `SameSite=Strict` (با پیشوند `__Host-` در production). فقط هش توکن در دیتابیس است.
+  هر نشست بعد از ۸ ساعت بی‌کاری یا ۲۴ ساعت تمام می‌شود؛ «مرا به خاطر بسپار» تا ۳۰ روز.
+- **قفل حساب** بعد از ۵ تلاش ناموفق (۱۵ دقیقه و هر بار دو برابر)، **مسدود شدن IP** بعد از ۲۰ تلاش ناموفق در ۱۵ دقیقه، و rate limit روی ورود.
+- **سیاست رمز:** حداقل ۱۲ کاراکتر، سه نوع کاراکتر (یا ۱۶ کاراکتر به بالا)، بدون نام کاربری و الگوهای رایج.
+- **رمز موقت:** هر کاربری که مدیر می‌سازد یا رمزش را ریست می‌کند، در اولین ورود باید رمزش را عوض کند؛ تا آن موقع هیچ API دیگری جواب نمی‌دهد.
+- **حساب من:** تغییر رمز (بقیه‌ی دستگاه‌ها خارج می‌شوند)، لیست دستگاه‌های واردشده و خروج از هر کدام.
+- **نقش‌ها:** بیننده (فقط پروژه‌های خودش)، مدیر (همه‌ی پروژه‌ها، مدیریت پروژه‌ها و بیننده‌ها)، مالک (همه‌کاره؛ فقط او مدیر و مالک می‌سازد). همیشه حداقل یک مالک فعال می‌ماند.
+- **گزارش امنیتی:** همه‌ی ورودها، تلاش‌های ناموفق، تغییر رمزها و تغییرات مدیریتی با زمان و IP.
+- **محافظ CSRF:** هر درخواست تغییردهنده باید هدر `X-Requested-With: fetch` داشته باشد؛ امکان محدود کردن پنل به IPهای خاص با `Auth:AllowedIps`.
 
-1. Publish: `dotnet publish src/Tracker.Collector -c Release -r win-x64 --self-contained false -p:RollForward=Major -o C:\apps\tracker`
-2. `appsettings.Local.json` را کنار فایل‌ها بگذارید (ConnectionStringها با `Server=127.0.0.1`، و `"TrustForwardedHeaders": true, "KnownProxies": ["127.0.0.1", "::1"]`).
-3. سرویس ویندوز با [WinSW](https://github.com/winsw/winsw): فایل `tracker-collector.xml` کنار exe:
-   ```xml
-   <service>
-     <id>tracker-collector</id><name>Tracker Collector</name>
-     <executable>C:\apps\tracker\Tracker.Collector.exe</executable>
-     <env name="ASPNETCORE_URLS" value="http://127.0.0.1:5085"/>
-     <env name="DOTNET_gcServer" value="0"/><env name="DOTNET_GCConserveMemory" value="7"/>
-     <startmode>Automatic</startmode><onfailure action="restart" delay="10 sec"/>
-     <logpath>C:\apps\tracker\logs</logpath>
-   </service>
-   ```
-   سپس `tracker-collector.exe install` و `Start-Service tracker-collector`.
-4. سایت IIS برای دامنه با URL Rewrite + ARR که همه‌ی درخواست‌ها را به `http://127.0.0.1:5085` بفرستد (و `HTTP_X_FORWARDED_PROTO` = `https`)، و گرفتن SSL با win-acme.
+## اجرای محلی
 
-> **نکته:** کاربر `tracker_writer` علاوه بر `INSERT` باید روی `tracker.Events` دسترسی `SELECT` هم داشته باشد، چون `SqlBulkCopy` قبل از نوشتن ساختار جدول را می‌خواند. `db/schema.sql` این دسترسی را می‌دهد. اگر دیتابیس را با نسخه‌ی قدیمی‌تر ساخته‌اید، این را اجرا کنید:
-> `GRANT SELECT ON tracker.Events TO tracker_writer;`
+۱. `backend/Tracker.Api/appsettings.Development.example.json` را به `appsettings.Development.json` کپی و پر کنید (رشته‌ی اتصال و مالک اولیه). این فایل در git نیست.
+
+۲. API (دیتابیس و جدول‌ها در اولین اجرا ساخته می‌شوند، و مالک اولیه از `Bootstrap` ساخته می‌شود):
+
+```bash
+cd backend/Tracker.Api
+dotnet run --launch-profile http        # http://localhost:5080
+```
+
+۳. پنل:
+
+```bash
+cd frontend
+npm install
+npm run dev                              # http://localhost:3100
+```
+
+بعد از اولین ورود رمز را عوض کنید و `Bootstrap:OwnerPassword` را از تنظیمات پاک کنید.
+بدون Bootstrap هم می‌شود مالک ساخت: `dotnet Tracker.Api.dll create-owner <username>` (و `reset-password <username>` برای فراموشی رمز).
+
+## انتشار روی سرور ویندوز (tracker.rhinox.ir)
+
+```powershell
+sqlcmd -S . -i deploy\windows\create-database.sql          # فقط اگر دیتابیس ندارید؛ اول رمز را عوض کنید
+dotnet publish backend\Tracker.Api -c Release -r win-x64 --self-contained false -o C:\temp\tracker\api
+# appsettings.Production.json را از deploy\windows\appsettings.Production.example.json بسازید و کنار فایل‌های API بگذارید
+cd frontend; $env:API_INTERNAL_URL="http://127.0.0.1:5086"; npm ci; npm run build; cd ..
+.\deploy\windows\install.ps1 -Api C:\temp\tracker\api -Frontend .\frontend -Domain tracker.rhinox.ir -WinSW C:\tools\WinSW-x64.exe -Email you@example.com
+```
+
+- دو سرویس ویندوز نصب می‌شود: `tracker-api` (روی `127.0.0.1:5086`) و `tracker-web` (Next.js روی `127.0.0.1:3100`).
+- IIS مسیرهای `/v1` و `/health` را مستقیم به API می‌فرستد و بقیه را به پنل (`deploy/windows/web.config`).
+- `API_INTERNAL_URL` در زمان build در Next.js ثبت می‌شود؛ اگر پورت API را عوض کردید دوباره build بگیرید.
+
+### ارتقا از نسخه‌ی ۱ (Tracker.Collector)
+
+- همان دیتابیس را بدهید. migration اولیه جدول `tracker.Projects` و جدول‌های رویداد موجود را نگه می‌دارد و فقط جدول‌های جدید را می‌سازد؛ پروژه‌ها، کلیدها و داده‌ها دست نمی‌خورند.
+  پوشه‌ی کلیدهای Data Protection نسخه‌ی قبل را هم نگه دارید (`Tracker:DataProtectionKeysPath`)، وگرنه کلیدهای سرور پروژه‌ها باز نمی‌شوند.
+- کاربران `tracker.DashboardUsers` و `Tracker:DashboardUsers` با همان رمزها منتقل می‌شوند؛ اولین مدیر، مالک می‌شود.
+- `ConnectionStrings:TrackerWriter` و `TrackerReader` هنوز کار می‌کنند، ولی اتصال اصلی حالا migration هم اجرا می‌کند و باید مالک schema باشد (`db_owner`).
+- `install.ps1` سرویس قدیمی `tracker-collector` را متوقف و غیرفعال می‌کند. آدرس سایت‌ها (`CollectorUrl`) و کلیدهایشان عوض نمی‌شود.
+
+## مدیریت مرکزی (چند سایت، یک پنل)
+
+از منوی **مدیریت ← پروژه‌ها** (مدیرها):
+
+- **پروژه‌ی جدید:** کلید (مثلاً `werty`)، نام و Originهای مجاز. `ServerSecret` و `ReadKey` فقط همان لحظه یک بار نمایش داده می‌شوند، همراه با تنظیمات آماده‌ی بک‌اند و Next.js.
+  کلید سرور رمزنگاری‌شده (ASP.NET Data Protection) و از کلید خواندن فقط هش ذخیره می‌شود.
+- **تنظیمات از راه دور:** روشن/خاموش کردن ثبت، درصد نمونه‌گیری API و بازدیدکننده، ثبت خودکار API و کلیک، ذخیره‌ی بدنه‌ی درخواست،
+  مسیرهای نادیده یا فقط‌این‌مسیرها. هر نصب (بک‌اند هر دقیقه، مرورگر در هر بار باز شدن سایت) این‌ها را می‌خواند.
+- **کلید جدید:** اگر کلیدی لو رفت، از همان‌جا کلید جدید بسازید؛ کلید قبلی فوراً از کار می‌افتد.
+- **غیرفعال کردن پروژه:** هیچ داده‌ای از آن پذیرفته نمی‌شود (داده‌های قبلی می‌مانند).
+- **کاربران پنل:** ساخت کاربر با رمز موقت، نقش، پروژه‌هایی که می‌بیند، غیرفعال کردن، باز کردن قفل، خروج اجباری از همه‌ی دستگاه‌ها.
 
 ## ۲. اضافه کردن به هر پروژه بک‌اند
 
@@ -98,7 +116,7 @@ app.UseTracker();          // بعد از UseRouting، قبل از Map ها
 
 ```json
 // appsettings.json  (ServerSecret را در User Secrets یا متغیر محیطی بگذارید)
-"Tracker": { "ProjectKey": "shop", "CollectorUrl": "https://track.mydomain.ir", "ServerSecret": "..." }
+"Tracker": { "ProjectKey": "shop", "CollectorUrl": "https://tracker.rhinox.ir", "ServerSecret": "..." }
 ```
 
 همین. از این به بعد هر درخواست به API با کاربر (از Claim های `sub` / `NameIdentifier` / `userId`)، مسیر، نتیجه، IP و دستگاه ثبت می‌شود.
@@ -131,7 +149,7 @@ npm i D:/track/Tracker/artifacts/npm/tracker-next-1.1.0.tgz
 // app/layout.tsx  (یا pages/_app.tsx)
 import { TrackerProvider } from "@tracker/next";
 
-<TrackerProvider projectKey="shop" collectorUrl="https://track.mydomain.ir"
+<TrackerProvider projectKey="shop" collectorUrl="https://tracker.rhinox.ir"
                 linkApiOrigins={["https://api.shop.ir"]}>
   {children}
 </TrackerProvider>
@@ -150,22 +168,6 @@ axios.get(url, { headers: tracker.headers() });       // اگر axios دارید
 - برای اینکه درخواست‌های API به همان بازدیدکننده وصل شوند، در CORS بک‌اند هدرهای
   `X-Tracker-Session` و `X-Tracker-Anon` را مجاز کنید:
   `policy.WithHeaders("Content-Type", "Authorization", "X-Tracker-Session", "X-Tracker-Anon")`.
-
-## مدیریت مرکزی (چند پروژه، یک داشبورد)
-
-یک Collector مرکزی (مثلاً `https://tracker.rhinox.ir`) همه پروژه‌ها را نگه می‌دارد. از منوی **مدیریت** در داشبورد (فقط مدیرها):
-
-- **پروژه جدید:** کلید (مثلاً `verti`)، نام و Origin های مجاز را وارد کنید. `ServerSecret` و `ReadKey` فقط همان لحظه یک بار نمایش داده می‌شوند.
-  کلید سرور رمزنگاری‌شده (ASP.NET Data Protection) و از کلید خواندن فقط هش ذخیره می‌شود.
-- **تنظیمات از راه دور:** روشن/خاموش کردن ثبت، درصد نمونه‌گیری API و بازدیدکننده، ثبت خودکار API و کلیک، ذخیره بدنه درخواست،
-  مسیرهای نادیده یا فقط‌این‌مسیرها. هر نصب (بک‌اند هر دقیقه، مرورگر در هر بار باز شدن سایت) این‌ها را می‌خواند؛ نیازی به انتشار دوباره نیست.
-- **کلید جدید:** اگر کلیدی لو رفت، از همان‌جا کلید جدید بسازید؛ کلید قبلی فوراً از کار می‌افتد.
-- **غیرفعال کردن پروژه:** هیچ داده‌ای از آن پذیرفته نمی‌شود (داده‌های قبلی می‌مانند).
-- **کاربران داشبورد:** ساخت کاربر، تعیین پروژه‌هایی که می‌بیند و نقش مدیر. حذف کاربر دسترسی او را فوراً قطع می‌کند.
-
-پروژه‌ها و کاربرانی که در `appsettings` تعریف شده‌اند هم کار می‌کنند و در این صفحه «از فایل تنظیمات» و فقط‌خواندنی نمایش داده می‌شوند.
-پوشه کلیدهای Data Protection (پیش‌فرض `App_Data/keys`، قابل تغییر با `Tracker:DataProtectionKeysPath`) را خصوصی نگه دارید و بکاپ بگیرید؛
-روی ویندوز با DPAPI ماشین هم رمز می‌شود.
 
 ## نمایش داده‌ها داخل خود پروژه (مثلاً پنل ادمین ورتی)
 
@@ -200,24 +202,19 @@ API مستقیم Collector هم در دسترس است: `GET /v1/read/{overview|
 
 ## امنیت
 
-- ورود داده از مرورگر فقط از Origin های مجاز هر پروژه، با Rate limit و سقف حجم. مرورگر نمی‌تواند رویداد API جعل کند.
+- ورود داده از مرورگر فقط از Originهای مجاز هر پروژه، با Rate limit و سقف حجم. مرورگر نمی‌تواند رویداد API جعل کند.
 - ورود داده از سرور با امضای HMAC-SHA256 روی هر بسته و محدودیت زمانی ۵ دقیقه.
-- فقط کوئری پارامتری (Dapper و SqlBulkCopy)؛ کاربرهای SQL جدا برای نوشتن و خواندن.
-- داشبورد: رمز PBKDF2، کوکی HttpOnly + Secure + SameSite=Strict، قفل بعد از ۵ تلاش ناموفق، محافظ CSRF،
-  CSP سخت‌گیرانه با هش اسکریپت‌ها، `X-Frame-Options: DENY`، امکان محدود کردن داشبورد به IP های خاص (`DashboardAllowedIps`).
-- ماسک خودکار password، token، کارت، CVV، کد ملی، شبا و هدر Authorization در SDK و دوباره در Collector.
-- SDK هیچ endpoint یا پورتی در پروژه شما باز نمی‌کند و هیچ Exception ای به برنامه شما نمی‌دهد.
-- حذف کامل داده یک کاربر از داشبورد (ادمین) یا `EXEC tracker.ForgetUser`.
-- نکته: `userId` ای که مرورگر با `identify` می‌فرستد از سمت کاربر قابل تغییر است (مثل همه ابزارهای مشابه)؛
-  رویدادهای API که از سمت سرور و از روی Claim ها ثبت می‌شوند قابل جعل نیستند.
+- فقط کوئری پارامتری (Dapper، SqlBulkCopy و EF Core).
+- پنل: بخش «ورود حرفه‌ای» بالا، به‌علاوه‌ی `X-Frame-Options: DENY`، `nosniff`، `no-store` روی همه‌ی پاسخ‌های API و noindex.
+- ماسک خودکار password، token، کارت، CVV، کد ملی، شبا و هدر Authorization در SDK و دوباره در API.
+- حذف کامل داده‌ی یک کاربر از پنل (مدیرها) یا `EXEC tracker.ForgetUser`.
 
 ## توسعه
 
 ```bash
-dotnet test                                   # تست‌های بک‌اند و Collector
-cd packages/tracker-next && npm run build && node test/browser.e2e.mjs   # تست مرورگر (Playwright)
-cd dashboard && npm run dev                   # داشبورد روی 3100، API از Collector روی 5080
-cd dashboard && npm run build && npm run publish-to-collector
+dotnet test Tracker.slnx                              # تست‌های API، ورود و پکیج‌ها (SQLite در حافظه، SQL Server لازم نیست)
+cd frontend && npm run lint && npm run build
+cd packages/tracker-next && npm run build && node test/browser.e2e.mjs
 ```
 
-ذخیره‌سازی از طریق `IEventStore` است؛ برای حجم خیلی بالا می‌شود پیاده‌سازی ClickHouse اضافه کرد بدون تغییر در SDK ها.
+ذخیره‌سازی رویدادها از طریق `IEventStore` است؛ برای حجم خیلی بالا می‌شود پیاده‌سازی ClickHouse اضافه کرد بدون تغییر در SDKها.
