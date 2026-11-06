@@ -6,10 +6,11 @@ const COOKIES = ["tk_session", "__Host-tk_session"];
 
 export function middleware(req: NextRequest) {
   if (COOKIES.some((c) => req.cookies.has(c))) return NextResponse.next();
-  const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.search = `?next=${encodeURIComponent(req.nextUrl.pathname + req.nextUrl.search)}`;
-  return NextResponse.redirect(url);
+  // Behind IIS the request URL holds the internal address (127.0.0.1:port); IIS sends the public one in X-Forwarded-*.
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
+  const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
+  const next = encodeURIComponent(req.nextUrl.pathname + req.nextUrl.search);
+  return NextResponse.redirect(`${proto}://${host}/login?next=${next}`);
 }
 
 export const config = {

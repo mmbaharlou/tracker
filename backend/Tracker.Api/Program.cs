@@ -24,8 +24,9 @@ if (args.Length > 0 && args[0] is "create-owner" or "reset-password" or "hash-pa
 {
     var cli = WebApplication.CreateBuilder(args[2..]);
     cli.Configuration.AddJsonFile("appsettings.Local.json", optional: true);
-    var cs = cli.Configuration.GetConnectionString("Default") ?? throw new InvalidOperationException("ConnectionStrings:Default is missing.");
-    return await PanelAuthSetup.RunCliAsync(args, () => new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(cs).Options)) ?? 1;
+    var cs = new[] { cli.Configuration.GetConnectionString("Default"), cli.Configuration.GetConnectionString("TrackerWriter") }.FirstOrDefault(x => !string.IsNullOrEmpty(x))
+             ?? throw new InvalidOperationException("ConnectionStrings:Default is missing.");
+    return await PanelAuthSetup.RunCliAsync(args, () => new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseSqlServer(cs, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", AppDbContext.Schema)).Options)) ?? 1;
 }
 
 var builder = WebApplication.CreateBuilder(args);
